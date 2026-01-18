@@ -1,0 +1,648 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Apple Catcher MiniGame</title>
+  <style>
+    html,body{height:100%;margin:0}
+    body{background:#f0f8ff;font-family:system-ui,Segoe UI,Arial;overflow:hidden}
+    #game{display:block;position:fixed;top:0;left:0;width:100vw;height:100vh;background:linear-gradient(#87ceeb,#b0e0e6)}
+    #hud{position:fixed;top:12px;left:50%;transform:translateX(-50%);z-index:10;background:rgba(255,255,255,0.95);padding:8px 14px;border-radius:8px;font-weight:600;box-shadow:0 2px 6px rgba(0,0,0,0.15);display:flex;flex-direction:column;align-items:center;text-align:center}
+    #hud .row{display:flex;gap:14px;align-items:center}
+    #hud div{line-height:1}
+    #highscore{position:fixed;top:12px;right:12px;z-index:11;background:rgba(255,255,255,0.95);padding:8px 10px;border-radius:8px;font-weight:700;box-shadow:0 2px 6px rgba(0,0,0,0.12)}
+    #speed{position:fixed;top:12px;right:180px;z-index:11;background:rgba(255,255,255,0.95);padding:8px 10px;border-radius:8px;font-weight:700;box-shadow:0 2px 6px rgba(0,0,0,0.12)}
+    .restart-overlay{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;z-index:50}
+    .restart-box{background:rgba(0,0,0,0.8);color:#fff;padding:18px 22px;border-radius:12px;text-align:center}
+    .restart-btn{margin-top:12px;display:inline-flex;align-items:center;justify-content:center;width:56px;height:56px;border-radius:50%;background:#fff;color:#ffd900;border:none;cursor:pointer}
+    .restart-btn svg{width:28px;height:28px}
+    @keyframes spin{to{transform:rotate(360deg)}}
+    .spin{animation:spin 1s linear infinite}
+    #selfKill{position:fixed;top:12px;left:12px;z-index:11;background:#ff6b6b;color:#fff;padding:6px 8px;border-radius:6px;font-weight:700;cursor:pointer;box-shadow:0 2px 6px rgba(0,0,0,0.12)}
+    #money-display{position:fixed;top:12px;left:120px;z-index:11;background:rgba(255,255,255,0.95);padding:8px 10px;border-radius:8px;font-weight:700;box-shadow:0 2px 6px rgba(0,0,0,0.12)}
+    #abilities{position:fixed;right:12px;top:50%;transform:translateY(-50%);z-index:11;background:#ffffff;padding:12px;border-radius:12px;box-shadow:0 4px 10px rgba(0,0,0,0.2);display:flex;flex-direction:column;gap:10px;align-items:center}
+    .ability-btn{width:50px;height:50px;border:none;border-radius:8px;cursor:pointer;font-weight:700;font-size:24px;display:flex;align-items:center;justify-content:center;transition:all 0.2s;box-shadow:0 2px 4px rgba(0,0,0,0.15);position:relative}
+    .ability-btn:hover:not(:disabled){transform:scale(1.05);box-shadow:0 3px 6px rgba(0,0,0,0.25)}
+    .ability-btn:disabled{opacity:0.4;cursor:not-allowed}
+    .ability-uses{position:absolute;bottom:2px;right:4px;background:rgba(0,0,0,0.6);color:#fff;font-size:11px;padding:1px 3px;border-radius:3px;min-width:18px;text-align:center}
+    #bomb-btn{background:#333;color:#fff}
+    #ice-btn{background:#4db8ff;color:#fff}
+    #heal-btn{background:#66bb6a;color:#fff}
+  </style>
+</head>
+<body>
+  <div id="hud">
+    <div class="row">
+      <div>Score: <span id="score">0</span></div>
+      <div>Lives: <span id="lives">3</span></div>
+    </div>
+    <div id="applesUntilLine">Apples Until Life: <span id="applesUntil">2</span></div>
+  </div>
+  <div id="speed">Speed: <span id="speedVal">+0.0</span></div>
+  <div id="highscore">Highscore: <span id="highscoreVal">0</span></div>
+  <div id="selfKill" title="End game (self kill)">Self Kill</div>
+ 
+  <div id="money-display">AC$: <span id="money">0</span></div>
+  <div id="abilities">
+    <button class="ability-btn" id="bomb-btn" title="Clear all apples">💣<span class="ability-uses" id="bomb-uses">1</span></button>
+    <button class="ability-btn" id="ice-btn" title="Freeze apples for 3s">❄️<span class="ability-uses" id="ice-uses">1</span></button>
+    <button class="ability-btn" id="heal-btn" title="Heal life & apples-until-life">➕<span class="ability-uses" id="heal-uses">1</span></button>
+  </div>
+
+
+  <script>
+    const canvas = document.getElementById('game');
+    const ctx = canvas.getContext('2d');
+    const scoreEl = document.getElementById('score');
+    const highscoreEl = document.getElementById('highscoreVal');
+    const moneyEl = document.getElementById('money');
+    let highscore = Number(localStorage.getItem('ac_highscore') || 0);
+    let money = Math.floor(highscore / 5);
+    if(highscoreEl) highscoreEl.textContent = highscore;
+    if(moneyEl) moneyEl.textContent = money;
+    let score = 0;
+    let mapType = Math.random() < 0.5 ? 'grass' : 'snow';
+    let mapTime = Math.random() < 0.5 ? 'day' : 'night';
+    let stars = [];
+    function generateStars(){
+      const w = getW(), h = getH();
+      stars = [];
+      const count = Math.max(40, Math.round((w * h) / 120000));
+      for(let i=0;i<count;i++){
+        stars.push({ x: Math.random()*w, y: Math.random()*h*0.55, r: Math.random()*1.6 + 0.4, a: 0.5 + Math.random()*0.5 });
+      }
+    }
+
+    function toggleDayNightIfNeeded(){
+      if(score > 0 && score % 60 === 0){
+        mapTime = (mapTime === 'day') ? 'night' : 'day';
+        if(mapTime === 'night') generateStars();
+      }
+    }
+    let spawnInterval = 900;
+    let apples = [];
+    let keys = {};
+
+    const getMaxApples = () => Math.min(5, 1 + Math.floor(score / 10));
+
+    function resize(){
+      canvas.style.width = window.innerWidth + 'px';
+      canvas.style.height = window.innerHeight + 'px';
+      const dpr = window.devicePixelRatio || 1;
+      canvas.width = Math.round(window.innerWidth * dpr);
+      canvas.height = Math.round(window.innerHeight * dpr);
+      ctx.setTransform(dpr,0,0,dpr,0,0);
+    }
+    window.addEventListener('resize', resize);
+    resize();
+    generateStars();
+
+    function getW(){ return parseInt(canvas.style.width); }
+    function getH(){ return parseInt(canvas.style.height); }
+
+    const player = {
+      x: getW()/2,
+      y: getH() - 60,
+      size: 48,
+      speed: 6,
+      basketRadius: 26,
+      color: ['#ff4444', '#888888', '#87ceeb', '#4a90e2', '#66bb6a'][Math.floor(Math.random() * 5)]
+    };
+
+    window.addEventListener('mousemove', e => {
+      const rect = canvas.getBoundingClientRect();
+      player.x = Math.max(20, Math.min(getW()-20, e.clientX - rect.left));
+    });
+    window.addEventListener('keydown', e => { keys[e.key] = true; });
+    window.addEventListener('keyup', e => { keys[e.key] = false; });
+
+    let freezeEnd = 0; 
+    let bombTotal = 1;
+    let bombUses = 1;
+    let iceTotal = 1;
+    let iceUses = 1;
+    let healTotal = 1;
+    let healUses = 1;
+
+    const bombBtn = document.getElementById('bomb-btn');
+    const iceBtn = document.getElementById('ice-btn');
+    const healBtn = document.getElementById('heal-btn');
+    const bombUsesEl = document.getElementById('bomb-uses');
+    const iceUsesEl = document.getElementById('ice-uses');
+    const healUsesEl = document.getElementById('heal-uses');
+
+    function updateUsesDisplay(){
+      if(bombUsesEl) bombUsesEl.textContent = bombUses;
+      if(iceUsesEl) iceUsesEl.textContent = iceUses;
+      if(healUsesEl) healUsesEl.textContent = healUses;
+      if(bombBtn) bombBtn.disabled = bombUses <= 0;
+      if(iceBtn) iceBtn.disabled = iceUses <= 0;
+      if(healBtn) healBtn.disabled = healUses <= 0;
+    }
+
+    function updateUsesIfNeeded(){
+      const newBombTotal = 1 + Math.floor(score / 40);
+      if(newBombTotal > bombTotal){
+        const gained = newBombTotal - bombTotal;
+        bombTotal = newBombTotal;
+        bombUses += gained;
+      }
+      const newIceTotal = 1 + Math.floor(score / 40);
+      if(newIceTotal > iceTotal){
+        const gained = newIceTotal - iceTotal;
+        iceTotal = newIceTotal;
+        iceUses += gained;
+      }
+      const newHealTotal = 1 + Math.floor(score / 40);
+      if(newHealTotal > healTotal){
+        const gained = newHealTotal - healTotal;
+        healTotal = newHealTotal;
+        healUses += gained;
+      }
+      updateUsesDisplay();
+    }
+    updateUsesDisplay();
+
+    if(bombBtn){
+      bombBtn.addEventListener('click', ()=>{
+        if(bombUses > 0){
+          apples = [];
+          bombUses -= 1;
+          updateUsesDisplay();
+        }
+      });
+    }
+
+    if(iceBtn){
+      iceBtn.addEventListener('click', ()=>{
+        if(iceUses > 0){
+          freezeEnd = Date.now() + 3000;
+          iceUses -= 1;
+          updateUsesDisplay();
+        }
+      });
+    }
+
+    if(healBtn){
+      healBtn.addEventListener('click', ()=>{
+        if(healUses > 0){
+          lives = Math.min(99, lives + 1);
+          applesUntilLife = 2;
+          missed = 0;
+          updateHUD();
+          healUses -= 1;
+          updateUsesDisplay();
+        }
+      });
+    }
+
+    function spawnApple(){
+      const w = getW();
+      const size = 18 + Math.random()*12;
+      const baseSpeed = 1.6 + Math.random()*2.4;
+      const speedBonus = Math.floor(score / 5) * 0.1; 
+      const speed = Math.min(5, baseSpeed + speedBonus);
+
+      totalSpawned += 1;
+
+      const groupsOf3Trigger = (totalSpawned % 3 === 0);
+      const extraSteps = Math.floor(totalSpawned / 12);
+      const bombChance = Math.min(0.49, 0.25 + extraSteps * 0.03);
+      const isBomb = groupsOf3Trigger && (Math.random() < bombChance);
+
+      apples.push({ x: 20 + Math.random()*(w-40), y: -30, size, speed, bomb: isBomb });
+    }
+    let spawnTimer = 0;
+    let totalSpawned = 0;
+
+    function drawApple(x, y, size, isBomb){
+      const centerY = y + size*0.6;
+      const r = size * 0.5;
+
+      const pastHalf = centerY > (getH() / 2);
+
+      if(isBomb && pastHalf){
+        ctx.beginPath();
+        ctx.arc(x, centerY, r, 0, Math.PI*2);
+        ctx.fillStyle = '#111';
+        ctx.fill();
+
+        ctx.beginPath();
+        ctx.fillStyle = 'rgba(255,255,255,0.06)';
+        ctx.ellipse(x - r*0.12, centerY - r*0.12, r*0.15, r*0.06, -0.6, 0, Math.PI*2);
+        ctx.fill();
+
+        
+        ctx.beginPath();
+        ctx.fillStyle = '#2b2b2b';
+        ctx.moveTo(x - r*0.08, y + size*0.05);
+        ctx.quadraticCurveTo(x - r*0.06, y - r*0.15, x + r*0.06, y + size*0.02);
+        ctx.fill();
+        return;
+      }
+
+      const grd = ctx.createRadialGradient(x - r*0.2, centerY - r*0.4, r*0.1, x, centerY, r*1.1);
+      grd.addColorStop(0, '#ff4d4d');
+      grd.addColorStop(0.6, '#d11d1d');
+
+      ctx.beginPath();
+      ctx.arc(x, centerY, r, 0, Math.PI*2);
+      ctx.fillStyle = grd;
+      ctx.fill();
+
+      ctx.beginPath();
+      ctx.fillStyle = 'rgba(255,255,255,0.5)';
+      ctx.ellipse(x - r*0.25, centerY - r*0.3, r*0.2, r*0.12, -0.6, 0, Math.PI*2);
+      ctx.fill();
+
+      ctx.beginPath();
+      ctx.fillStyle = '#5b3a1a';
+      ctx.moveTo(x - r*0.08, y + size*0.05);
+      ctx.quadraticCurveTo(x - r*0.06, y - r*0.15, x + r*0.06, y + size*0.02);
+      ctx.fill();
+
+      ctx.beginPath();
+      ctx.fillStyle = '#2e8b36';
+      ctx.moveTo(x + r*0.08, y + size*0.02);
+      ctx.quadraticCurveTo(x + r*0.5, y - r*0.25, x + r*0.05, y + r*0.05);
+      ctx.fill();
+    }
+
+    function drawBackground(){
+      const w = getW(), h = getH();
+      const sky = ctx.createLinearGradient(0,0,0,h);
+      if(mapType === 'grass'){
+        if(mapTime === 'day'){
+          sky.addColorStop(0, '#87ceeb');
+          sky.addColorStop(1, '#b0e0e6');
+        } else {
+          sky.addColorStop(0, '#021428');
+          sky.addColorStop(1, '#052b3a');
+        }
+      } else {
+        if(mapTime === 'day'){
+          sky.addColorStop(0, '#e6f3fb');
+          sky.addColorStop(1, '#f7fbff');
+        } else {
+          sky.addColorStop(0, '#071726');
+          sky.addColorStop(1, '#0b2330');
+        }
+      }
+      ctx.fillStyle = sky;
+      ctx.fillRect(0,0,w,h);
+
+      // draw stars when night
+      if(mapTime === 'night'){
+        ctx.save();
+        for(const s of stars){
+          ctx.beginPath();
+          ctx.fillStyle = 'rgba(255,255,255,' + (s.a * (0.7 + Math.random()*0.3)) + ')';
+          ctx.arc(s.x, s.y, s.r, 0, Math.PI*2);
+          ctx.fill();
+        }
+        
+        ctx.beginPath();
+        ctx.fillStyle = 'rgba(255,255,230,0.95)';
+        ctx.arc(w*0.82, h*0.16, Math.min(40, w*0.04), 0, Math.PI*2);
+        ctx.fill();
+        ctx.restore();
+      }
+
+      if(mapType === 'grass'){
+        ctx.fillStyle = (mapTime === 'night') ? '#6fa75a' : '#9ed36b';
+        ctx.beginPath();
+        ctx.ellipse(w*0.15, h*0.9, w*0.6, h*0.25, 0, 0, Math.PI*2);
+        ctx.fill();
+        ctx.fillStyle = (mapTime === 'night') ? '#4f7a36' : '#76b041';
+        ctx.beginPath();
+        ctx.ellipse(w*0.8, h*0.95, w*0.5, h*0.22, 0, 0, Math.PI*2);
+        ctx.fill();
+      } else {
+        ctx.fillStyle = (mapTime === 'night') ? '#f6fbff' : '#ffffff';
+        ctx.beginPath();
+        ctx.ellipse(w*0.25, h*0.92, w*0.6, h*0.26, 0, 0, Math.PI*2);
+        ctx.fill();
+        ctx.beginPath();
+        ctx.ellipse(w*0.75, h*0.96, w*0.5, h*0.2, 0, 0, Math.PI*2);
+        ctx.fill();
+
+        const treeCount = Math.max(4, Math.round(w / 160));
+        for(let i=0;i<treeCount;i++){
+          const tx = 40 + i * (w - 80) / (treeCount-1);
+          const ty = h - 160 - (i%3)*12; 
+        
+          ctx.fillStyle = '#6b4a2a';
+          ctx.fillRect(tx-8, ty+44, 16, 32);
+          
+          ctx.fillStyle = '#dff4ff';
+          ctx.beginPath(); ctx.moveTo(tx, ty); ctx.lineTo(tx-48, ty+64); ctx.lineTo(tx+48, ty+64); ctx.closePath(); ctx.fill();
+          ctx.beginPath(); ctx.moveTo(tx, ty+22); ctx.lineTo(tx-40, ty+86); ctx.lineTo(tx+40, ty+86); ctx.closePath(); ctx.fill();
+          ctx.beginPath(); ctx.moveTo(tx, ty+40); ctx.lineTo(tx-32, ty+108); ctx.lineTo(tx+32, ty+108); ctx.closePath(); ctx.fill();
+         
+          ctx.strokeStyle = 'rgba(0,0,0,0.06)'; ctx.stroke();
+        }
+      }
+    }
+
+    function update(){
+      const w = getW(), h = getH();
+      if(keys['ArrowLeft'] || keys['a']) player.x -= player.speed;
+      if(keys['ArrowRight'] || keys['d']) player.x += player.speed;
+      player.x = Math.max(0, Math.min(w, player.x));
+      player.y = h - 60;
+
+      spawnTimer += 16.6;
+      if (spawnTimer > spawnInterval) {
+        spawnTimer = 0;
+        if (apples.length < getMaxApples()) spawnApple();
+      }
+
+      for(let i = apples.length-1; i >= 0; i--){
+        const a = apples[i];
+        
+        if(Date.now() < freezeEnd){
+         
+        } else {
+          a.y += a.speed;
+        }
+        const ax = a.x;
+        const ay = a.y + a.size*0.5;
+        const dx = ax - player.x;
+        const dy = ay - player.y;
+        const dist = Math.sqrt(dx*dx + dy*dy);
+        if(dist < player.basketRadius + a.size*0.45){
+          const centerY = a.y + a.size*0.5;
+          const bombActive = !!a.bomb && (centerY > (getH() / 2));
+          if(bombActive){
+          
+            apples.splice(i,1);
+            missed += 1;
+            updateHUD();
+            if(missed >= applesUntilLife) loseLife();
+            continue;
+          }
+
+        
+          apples.splice(i,1);
+          score += 1;
+          
+          if(score % 20 === 0){
+            lives = (typeof lives === 'number') ? lives + 1 : 1;
+            applesUntilLife = 3;
+            missed = 0;
+            const ln = document.getElementById('lives'); if(ln) ln.textContent = lives;
+            const an = document.getElementById('applesUntil'); if(an) an.textContent = Math.max(0, applesUntilLife - missed);
+          }
+          scoreEl.textContent = score;
+          updateHUD();
+          toggleDayNightIfNeeded();
+          updateUsesIfNeeded();
+          continue;
+        }
+        if(a.y - a.size > h + 60) { handleMiss(i); }
+      }
+    }
+
+    function draw(){
+      const w = getW(), h = getH();
+     
+      drawBackground();
+
+      
+      ctx.fillStyle = player.color;
+      ctx.beginPath();
+      ctx.arc(player.x, player.y, 36, 0, Math.PI*2);
+      ctx.fill();
+      
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath();
+      ctx.arc(player.x - 14, player.y - 10, 8, 0, Math.PI*2);
+      ctx.fill();
+      
+      ctx.beginPath();
+      ctx.arc(player.x + 14, player.y - 10, 8, 0, Math.PI*2);
+      ctx.fill();
+   
+      ctx.fillStyle = '#1a1a1a';
+      ctx.beginPath();
+      ctx.arc(player.x - 14 + 2.5, player.y - 9, 4, 0, Math.PI*2);
+      ctx.fill();
+    
+      ctx.beginPath();
+      ctx.arc(player.x + 14 + 2.5, player.y - 9, 4, 0, Math.PI*2);
+      ctx.fill();
+
+      
+      ctx.fillStyle = '#c07b00';
+      
+      ctx.beginPath();
+      ctx.moveTo(player.x - player.basketRadius - 4, player.y - 4);
+      ctx.lineTo(player.x + player.basketRadius + 4, player.y - 4);
+      ctx.lineTo(player.x + player.basketRadius, player.y + 16);
+      ctx.lineTo(player.x - player.basketRadius, player.y + 16);
+      ctx.closePath();
+      ctx.fill();
+    
+      ctx.strokeStyle = '#b8681f';
+      ctx.lineWidth = 1.5;
+      for(let i=0;i<5;i++){
+        const y = player.y - 4 + (i * 5);
+        ctx.beginPath();
+        ctx.moveTo(player.x - player.basketRadius - 2, y);
+        ctx.lineTo(player.x + player.basketRadius + 2, y);
+        ctx.stroke();
+      }
+      
+      for(let i=-3;i<=3;i++){
+        const x = player.x + (i * 6);
+        ctx.beginPath();
+        ctx.moveTo(x, player.y - 4);
+        ctx.lineTo(x, player.y + 16);
+        ctx.stroke();
+      }
+     
+      ctx.strokeStyle = '#8b5a00';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(player.x - player.basketRadius - 4, player.y - 4);
+      ctx.lineTo(player.x + player.basketRadius + 4, player.y - 4);
+      ctx.stroke();
+
+      
+      for(const a of apples){
+        drawApple(a.x, a.y, a.size, !!a.bomb);
+      }
+    }
+
+    let last = performance.now();
+    function loop(now){
+      const dt = now - last;
+      last = now;
+      update(dt);
+      draw();
+      requestAnimationFrame(loop);
+    }
+    requestAnimationFrame(loop);
+
+
+    window.addEventListener('touchmove', e => {
+      const t = e.touches[0];
+      const rect = canvas.getBoundingClientRect();
+      player.x = Math.max(20, Math.min(getW()-20, t.clientX - rect.left));
+    });
+
+    const _hud = document.getElementById('hud');
+    if(_hud){ /* no-op: don't reset score on HUD clicks anymore */ }
+    const selfBtn = document.getElementById('selfKill');
+    if(selfBtn){
+      selfBtn.addEventListener('click', ()=>{
+        lives = 0;
+        updateHUD();
+        gameActive = false;
+        showGameOver();
+      });
+    }
+
+    new ResizeObserver(()=>{ player.x = Math.min(getW(), Math.max(40, player.x)); player.y = getH()-60; }).observe(canvas);
+    
+    new ResizeObserver(()=>{ generateStars(); }).observe(canvas);
+
+    let lives = 3, missed = 0, applesUntilLife = 2;
+    const MAX_APPLES_UNTIL = 5;
+    const livesEl = document.getElementById('lives');
+    const applesUntilEl = document.getElementById('applesUntil');
+    const speedValEl = document.getElementById('speedVal');
+    function updateHUD(){
+      if(scoreEl) scoreEl.textContent = score;
+      if(livesEl) livesEl.textContent = lives;
+      if(applesUntilEl) applesUntilEl.textContent = Math.max(0, applesUntilLife - missed);
+      
+      if(speedValEl){
+        const speedBonus = Math.floor(score / 5) * 0.1;
+        speedValEl.textContent = (speedBonus > 0) ? ('+' + speedBonus.toFixed(1)) : '+0.0';
+      }
+   
+      if(score > highscore){
+        highscore = score;
+        money = Math.floor(highscore / 5);
+        localStorage.setItem('ac_highscore', String(highscore));
+        localStorage.setItem('ac_money', String(money));
+        if(highscoreEl) highscoreEl.textContent = highscore;
+        if(moneyEl) moneyEl.textContent = money;
+      }
+    }
+    updateHUD();
+
+    function showGameOver(){
+      
+      const hsEl = document.getElementById('highscoreVal');
+      const stored = Number(localStorage.getItem('ac_highscore') || 0);
+      if(score > stored){
+        localStorage.setItem('ac_highscore', String(score));
+        if(hsEl) hsEl.textContent = score;
+      }
+
+      const overlay = document.createElement('div');
+      overlay.className = 'restart-overlay';
+
+      const box = document.createElement('div');
+      box.className = 'restart-box';
+      const msg = document.createElement('div');
+      msg.textContent = 'GAME OVER';
+      msg.style.fontSize = '20px';
+      msg.style.marginBottom = '8px';
+      box.appendChild(msg);
+
+      const scoreLine = document.createElement('div');
+      scoreLine.textContent = 'Score: ' + score;
+      scoreLine.style.marginBottom = '8px';
+      box.appendChild(scoreLine);
+
+      const btn = document.createElement('button');
+      btn.className = 'restart-btn';
+      btn.title = 'Play again';
+      btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 0-3.2 6.6"></path><polyline points="21 12 21 6 15 6"></polyline></svg>';
+      btn.querySelector('svg').classList.add('spin');
+      btn.addEventListener('click', ()=>{ restartGame(); document.body.removeChild(overlay); });
+      box.appendChild(btn);
+
+      overlay.appendChild(box);
+      document.body.appendChild(overlay);
+    }
+
+    function loseLife(){
+      lives -= 1;
+      missed = 0;
+      applesUntilLife = 2;
+      updateHUD();
+      if(lives <= 0){
+        gameActive = false;
+        showGameOver();
+      }
+    }
+
+    function restartGame(){
+     
+      score = 0;
+      apples = [];
+      missed = 0;
+      lives = 3;
+      applesUntilLife = 2;
+      spawnTimer = 0;
+   
+      mapType = Math.random() < 0.5 ? 'grass' : 'snow';
+      mapTime = Math.random() < 0.5 ? 'day' : 'night';
+      generateStars();
+    
+      player.color = ['#ff4444', '#888888', '#87ceeb', '#4a90e2', '#66bb6a'][Math.floor(Math.random() * 5)];
+    
+      bombTotal = 1;
+      bombUses = 1;
+      iceTotal = 1;
+      iceUses = 1;
+      healTotal = 1;
+      healUses = 1;
+      updateUsesDisplay();
+      updateHUD();
+      gameActive = true;
+    }
+
+    function handleMiss(i){
+      const a = apples[i];
+      apples.splice(i, 1);
+    
+      if(a && a.bomb){
+        score += 1;
+          if(score % 20 === 0){
+            lives = (typeof lives === 'number') ? lives + 1 : 1;
+            applesUntilLife = Math.min(MAX_APPLES_UNTIL, 3);
+            missed = 0;
+            const ln = document.getElementById('lives'); if(ln) ln.textContent = lives;
+            const an = document.getElementById('applesUntil'); if(an) an.textContent = Math.max(0, applesUntilLife - missed);
+          }
+        if(scoreEl) scoreEl.textContent = score;
+        updateHUD();
+        toggleDayNightIfNeeded();
+        updateUsesIfNeeded();
+        return;
+      }
+
+      missed += 1;
+      if(applesUntilEl) applesUntilEl.textContent = Math.max(0, applesUntilLife - missed);
+      if(missed >= applesUntilLife){
+        loseLife();
+      }
+    }
+
+    // prevent updates after game over by wrapping the existing update()
+    const _update = update;
+    let gameActive = true;
+    update = function(dt){
+      if(!gameActive) return;
+      _update(dt);
+    };
+    
+  </script>
+</body>
+</html>
